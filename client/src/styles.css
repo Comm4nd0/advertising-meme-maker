@@ -411,6 +411,22 @@ label.inline { flex-direction: row; align-items: center; gap: 6px; }
   gap: 4px;
   flex-shrink: 0;
 }
+.history-preview-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: #232b38;
+  color: #b8c4d4;
+  border: none;
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0;
+}
+.history-preview-btn:hover { background: #2a3544; color: #1e88e5; }
+.history-preview-btn.active { background: #1e88e5; color: white; }
 .history-dl {
   display: flex;
   align-items: center;
@@ -440,6 +456,13 @@ label.inline { flex-direction: row; align-items: center; gap: 6px; }
   padding: 0;
 }
 .history-delete:hover { background: #6a3838; }
+.history-video {
+  width: 100%;
+  max-height: 240px;
+  background: #000;
+  border-radius: 4px;
+  margin-top: 6px;
+}
 
 .export-panel { display: flex; flex-direction: column; gap: 12px; }
 .export-panel .row { margin-bottom: 0; }

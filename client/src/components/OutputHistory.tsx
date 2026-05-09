@@ -15,6 +15,7 @@ interface Props {
 export function OutputHistory({ refreshKey }: Props) {
   const [files, setFiles] = useState<OutputFile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -31,9 +32,14 @@ export function OutputHistory({ refreshKey }: Props) {
     try {
       await fetch(`/api/outputs/${encodeURIComponent(filename)}`, { method: 'DELETE' });
       setFiles((prev) => prev.filter((f) => f.filename !== filename));
+      if (previewUrl && previewUrl.includes(filename)) setPreviewUrl(null);
     } catch (err) {
       console.error('delete failed', err);
     }
+  }
+
+  function togglePreview(url: string) {
+    setPreviewUrl((prev) => (prev === url ? null : url));
   }
 
   function formatDate(iso: string): string {
@@ -52,30 +58,51 @@ export function OutputHistory({ refreshKey }: Props) {
 
   return (
     <div className="output-history">
-      {files.map((f) => (
-        <div key={f.filename} className="history-item">
-          <div className="history-info">
-            <a href={f.url} download className="history-link" title={f.filename}>
-              {f.filename.replace(/\.(mp4|webm|mov)$/i, '')}
-            </a>
-            <span className="history-meta">
-              {f.sizeMB} MB · {formatDate(f.createdAt)}
-            </span>
+      {files.map((f) => {
+        const isOpen = previewUrl === f.url;
+        return (
+          <div key={f.filename} className="history-entry">
+            <div className="history-item">
+              <div className="history-info">
+                <a href={f.url} download className="history-link" title={f.filename}>
+                  {f.filename.replace(/\.(mp4|webm|mov)$/i, '')}
+                </a>
+                <span className="history-meta">
+                  {f.sizeMB} MB · {formatDate(f.createdAt)}
+                </span>
+              </div>
+              <div className="history-actions">
+                <button
+                  className={`history-preview-btn ${isOpen ? 'active' : ''}`}
+                  onClick={() => togglePreview(f.url)}
+                  title={isOpen ? 'Hide preview' : 'Preview'}
+                >
+                  ▶
+                </button>
+                <a href={f.url} download className="history-dl" title="Download">
+                  ↓
+                </a>
+                <button
+                  className="history-delete"
+                  onClick={() => onDelete(f.filename)}
+                  title="Delete"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            {isOpen && (
+              <video
+                src={f.url}
+                controls
+                playsInline
+                autoPlay
+                className="history-video"
+              />
+            )}
           </div>
-          <div className="history-actions">
-            <a href={f.url} download className="history-dl" title="Download">
-              ↓
-            </a>
-            <button
-              className="history-delete"
-              onClick={() => onDelete(f.filename)}
-              title="Delete"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
