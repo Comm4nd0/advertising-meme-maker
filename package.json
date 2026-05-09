@@ -1,0 +1,18 @@
+{
+  "name": "advertising-meme-maker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Local web app for stitching meme videos/images with branded outro slides for Luma Tech Solutions ads.",
+  "scripts": {
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
+    "dev": "concurrently -n srv,web -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "start": "npm run dev",
+    "build": "npm --prefix client run build && npm --prefix server run build",
+    "serve": "npm --prefix server run serve"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
