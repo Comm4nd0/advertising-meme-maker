@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { paths } from '../storage/paths';
+import { paths, isSafeName } from '../storage/paths';
 
 export const outputsRouter = Router();
 
@@ -45,8 +45,7 @@ outputsRouter.get('/', (_req, res) => {
 outputsRouter.delete('/:filename', (req, res) => {
   try {
     const filename = req.params.filename;
-    // Sanitise: only allow filenames, no path traversal
-    if (filename.includes('/') || filename.includes('\\') || filename.includes('..')) {
+    if (!isSafeName(filename)) {
       res.status(400).json({ error: 'Invalid filename' });
       return;
     }

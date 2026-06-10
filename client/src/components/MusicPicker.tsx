@@ -16,8 +16,17 @@ export function MusicPicker({ selectedMusic, musicVolume, onMusicChange, onVolum
 
   useEffect(() => {
     getBrand()
-      .then(({ music }) => setMusicList(music || []))
+      .then(({ music }) => {
+        const list = music || [];
+        setMusicList(list);
+        // Clear stale selection if the saved track is no longer in the library
+        if (selectedMusic && !list.includes(selectedMusic)) {
+          onMusicChange(null);
+        }
+      })
       .catch(() => {});
+    // Run once on mount — don't re-validate every time the user picks a track
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {

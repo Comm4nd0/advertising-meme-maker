@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { BrandKit } from '../types';
+import type { BrandKit, WatermarkPosition } from '../types';
 import { getBrand, putBrand, setActiveLogo, deleteLogoFromLibrary } from '../lib/api';
 
 interface Props {
@@ -186,6 +186,42 @@ export function BrandSettings({ onChange }: Props) {
           />
         </label>
       </div>
+
+      <hr />
+      <h3>Watermark</h3>
+      <label>
+        <span>Social handle</span>
+        <input
+          type="text"
+          placeholder="@lumatechsolutions"
+          value={brand.handle}
+          onChange={(e) => update('handle', e.target.value)}
+        />
+      </label>
+      <label className="row inline">
+        <input
+          type="checkbox"
+          checked={brand.watermarkEnabled}
+          onChange={(e) => update('watermarkEnabled', e.target.checked)}
+        />
+        <span>Show watermark on video</span>
+      </label>
+      {brand.watermarkEnabled && (
+        <label>
+          <span>Position</span>
+          <select
+            value={brand.watermarkPosition}
+            onChange={(e) =>
+              update('watermarkPosition', e.target.value as WatermarkPosition)
+            }
+          >
+            <option value="top-left">Top-left</option>
+            <option value="top-right">Top-right</option>
+            <option value="bottom-left">Bottom-left</option>
+            <option value="bottom-right">Bottom-right</option>
+          </select>
+        </label>
+      )}
     </div>
   );
 }

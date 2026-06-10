@@ -1,4 +1,5 @@
 import type { Slide, BrandKit } from '../types';
+import { wrapText } from './wrapText';
 
 export interface RenderArgs {
   canvas: HTMLCanvasElement;
@@ -57,11 +58,13 @@ export function renderSlide(args: RenderArgs): void {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
+  const measure = (s: string) => ctx.measureText(s).width;
+
   ctx.font = `700 ${headlineSize}px ${FONT_STACK}`;
-  const headlineLines = wrap(ctx, slide.headline || '', maxTextWidth);
+  const headlineLines = wrapText(measure, slide.headline || '', maxTextWidth);
 
   ctx.font = `400 ${subheadSize}px ${FONT_STACK}`;
-  const subheadLines = wrap(ctx, slide.subhead || '', maxTextWidth);
+  const subheadLines = wrapText(measure, slide.subhead || '', maxTextWidth);
 
   const headlineLineH = Math.round(headlineSize * 1.15);
   const subheadLineH = Math.round(subheadSize * 1.3);
@@ -91,24 +94,6 @@ export function renderSlide(args: RenderArgs): void {
       y += subheadLineH;
     }
   }
-}
-
-function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  if (!text) return [];
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let cur = '';
-  for (const w of words) {
-    const test = cur ? cur + ' ' + w : w;
-    if (ctx.measureText(test).width > maxWidth && cur) {
-      lines.push(cur);
-      cur = w;
-    } else {
-      cur = test;
-    }
-  }
-  if (cur) lines.push(cur);
-  return lines;
 }
 
 export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {

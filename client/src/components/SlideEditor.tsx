@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { uid } from '../lib/uid';
+import { generateSubhead } from '../lib/autoSubhead';
 import type { Slide } from '../types';
 import {
   ALL_CATEGORIES,
@@ -20,7 +21,7 @@ interface Props {
 function newSlide(): Slide {
   return {
     id: uid(),
-    headline: 'Your headline here',
+    headline: '',
     subhead: 'Luma Tech Solutions',
     durationSec: 4,
   };
@@ -29,16 +30,71 @@ function newSlide(): Slide {
 export function SlideEditor({ slides, selectedId, onChange, onSelect, hasSource }: Props) {
   const [category, setCategory] = useState<Category>('cctv');
   const [lastSetIndex, setLastSetIndex] = useState<number | undefined>(undefined);
+  // Track which slides have had their subhead manually edited
+  const manualSubheadRef = useRef<Set<string>>(new Set());
+  const debounceRef = useRef<Map<string, number>>(new Map());
+  // Keep latest slides + onChange in refs so debounced callbacks never go stale
+  const slidesRef = useRef(slides);
+  slidesRef.current = slides;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   function update(id: string, patch: Partial<Slide>) {
     onChange(slides.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }
+
+  function onHeadlineChange(id: string, headline: string) {
+    if (manualSubheadRef.current.has(id)) {
+      // Subhead was manually edited — only update headline
+      update(id, { headline });
+      return;
+    }
+
+    // Clear existing debounce for this slide
+    const existing = debounceRef.current.get(id);
+    if (existing) window.clearTimeout(existing);
+
+    // Update headline immediately
+    update(id, { headline });
+
+    // Debounce the auto-subhead so it doesn't regenerate on every keystroke
+    const timer = window.setTimeout(() => {
+      const trimmed = headline.trim();
+      if (trimmed.length >= 3) {
+        const subhead = generateSubhead(trimmed);
+        // Use refs to get the latest slides, avoiding stale closure
+        onChangeRef.current(
+          slidesRef.current.map((s) => (s.id === id ? { ...s, subhead } : s))
+        );
+      }
+      debounceRef.current.delete(id);
+    }, 600);
+    debounceRef.current.set(id, timer);
+  }
+
+  function onSubheadChange(id: string, subhead: string) {
+    manualSubheadRef.current.add(id);
+    update(id, { subhead });
+  }
+
+  function regenerateSubhead(id: string) {
+    const slide = slides.find((s) => s.id === id);
+    if (!slide) return;
+    manualSubheadRef.current.delete(id);
+    const subhead = generateSubhead(slide.headline);
+    update(id, { subhead });
+  }
+
   function add() {
     const s = newSlide();
     onChange([...slides, s]);
     onSelect(s.id);
   }
   function remove(id: string) {
+    manualSubheadRef.current.delete(id);
+    const existing = debounceRef.current.get(id);
+    if (existing) window.clearTimeout(existing);
+    debounceRef.current.delete(id);
     const next = slides.filter((s) => s.id !== id);
     onChange(next);
     if (selectedId === id) onSelect(next[0]?.id || null);
@@ -58,6 +114,9 @@ export function SlideEditor({ slides, selectedId, onChange, onSelect, hasSource 
     const { index, set } = pickTemplateSet(c, lastSetIndex);
     setLastSetIndex(index);
     const newSlides = templateSetToSlides(set);
+    // Template slides have pre-paired headlines+subheads, mark them as manual
+    // so auto-fill doesn't overwrite the curated copy
+    for (const s of newSlides) manualSubheadRef.current.add(s.id);
     onChange(newSlides);
     if (newSlides.length > 0) onSelect(newSlides[0].id);
   }
@@ -124,15 +183,25 @@ export function SlideEditor({ slides, selectedId, onChange, onSelect, hasSource 
                   <input
                     type="text"
                     value={s.headline}
-                    onChange={(e) => update(s.id, { headline: e.target.value })}
+                    placeholder="Type a headline — subhead fills automatically"
+                    onChange={(e) => onHeadlineChange(s.id, e.target.value)}
                   />
                 </label>
                 <label>
-                  <span>Subhead</span>
+                  <span className="subhead-label">
+                    Subhead
+                    <button
+                      className="regen-btn"
+                      onClick={() => regenerateSubhead(s.id)}
+                      title="Auto-generate subhead from headline"
+                    >
+                      ↻
+                    </button>
+                  </span>
                   <input
                     type="text"
                     value={s.subhead}
-                    onChange={(e) => update(s.id, { subhead: e.target.value })}
+                    onChange={(e) => onSubheadChange(s.id, e.target.value)}
                   />
                 </label>
                 <label>

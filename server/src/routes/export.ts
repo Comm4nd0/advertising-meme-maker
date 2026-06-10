@@ -3,10 +3,18 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { paths } from '../storage/paths';
+import { paths, isSafeName } from '../storage/paths';
 import { probe } from '../ffmpeg/probe';
-import { runConcat, type SlideClip } from '../ffmpeg/concat';
+import {
+  runConcat,
+  type SlideClip,
+  type WatermarkOverlay,
+  type HookOverlay,
+} from '../ffmpeg/concat';
 import { musicPath } from '../storage/music';
+import type { WatermarkPosition } from '../storage/brand';
+import { synthesize as synthesizeTts } from '../tts/edge';
+import { debugLog } from '../util/debug';
 
 export const exportRouter = Router();
 
@@ -19,6 +27,10 @@ interface JobState {
 
 const jobs = new Map<string, JobState>();
 
+// Drop a finished job after this long so the SSE client has time to read the
+// terminal status, but the map doesn't grow without bound across exports.
+const JOB_TTL_MS = 60_000;
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024, files: 50 },
@@ -30,18 +42,60 @@ function findInputFile(jobDir: string): string | null {
   return entries.length > 0 ? path.join(jobDir, entries[0]) : null;
 }
 
-exportRouter.post('/', upload.array('slides'), async (req, res) => {
+// Parse a numeric body field, falling back to `def` on NaN/Infinity and
+// clamping into [min, max]. Multipart fields arrive as strings, so a malformed
+// value would otherwise become NaN and poison the ffmpeg filter strings.
+function num(value: unknown, def: number, min: number, max: number): number {
+  const n = typeof value === 'string' ? parseFloat(value) : Number(value);
+  if (!Number.isFinite(n)) return def;
+  return Math.max(min, Math.min(max, n));
+}
+
+// Optional numeric field: undefined/empty stays undefined; non-finite is dropped.
+function numOpt(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  const n = typeof value === 'string' ? parseFloat(value) : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+// Optional positive integer (e.g. target dimensions); 0/negative → undefined.
+function posIntOpt(value: unknown): number | undefined {
+  const n = numOpt(value);
+  return n !== undefined && n > 0 ? Math.round(n) : undefined;
+}
+
+const exportUpload = upload.fields([
+  { name: 'slides', maxCount: 50 },
+  { name: 'watermark', maxCount: 1 },
+  { name: 'hook', maxCount: 1 },
+]);
+
+exportRouter.post('/', exportUpload, async (req, res) => {
   try {
     const jobId = req.body.jobId as string | undefined;
     const slideDurations: number[] = req.body.slideDurations
       ? JSON.parse(req.body.slideDurations)
       : [];
-    const imageDurationSec = parseFloat(req.body.imageDurationSec || '4');
+    const imageDurationSec = num(req.body.imageDurationSec, 4, 0.5, 60);
     const musicFile = (req.body.music as string) || '';
-    const musicVol = parseFloat(req.body.musicVolume || '80');
+    const musicVol = num(req.body.musicVolume, 80, 0, 100);
+    const trimStartSec = numOpt(req.body.trimStart);
+    const trimEndSec = numOpt(req.body.trimEnd);
+    const targetW = posIntOpt(req.body.targetWidth);
+    const targetH = posIntOpt(req.body.targetHeight);
+    const watermarkPosition = (req.body.watermarkPosition as WatermarkPosition) || undefined;
+    const hookDurationSec = numOpt(req.body.hookDurationSec);
+    const voiceEnabled = req.body.voiceEnabled === '1';
+    const voiceName = (req.body.voiceName as string) || '';
+    const slideTexts: string[] = req.body.slideTexts
+      ? JSON.parse(req.body.slideTexts)
+      : [];
+    const effectType = (req.body.effectType as string) || '';
+    const effectDurationSec = num(req.body.effectDurationSec, 0, 0, 60);
+    const effectCount = Math.round(num(req.body.effectCount, 1, 1, 10));
 
-    if (!jobId) {
-      res.status(400).json({ error: 'Missing jobId' });
+    if (!isSafeName(jobId)) {
+      res.status(400).json({ error: 'Missing or invalid jobId' });
       return;
     }
 
@@ -52,7 +106,11 @@ exportRouter.post('/', upload.array('slides'), async (req, res) => {
       return;
     }
 
-    const slideFiles = (req.files as Express.Multer.File[]) || [];
+    const files = (req.files as Record<string, Express.Multer.File[]>) || {};
+    const slideFiles = files.slides || [];
+    const watermarkFile = files.watermark?.[0];
+    const hookFile = files.hook?.[0];
+
     if (slideFiles.length === 0) {
       res.status(400).json({ error: 'No slides provided' });
       return;
@@ -70,8 +128,53 @@ exportRouter.post('/', upload.array('slides'), async (req, res) => {
       });
     }
 
+    // Synthesize TTS audio for each slide whose text is non-empty.
+    // msedge-tts writes to a fixed filename inside the output directory,
+    // so each slide MUST use its own subdirectory — otherwise call N+1
+    // overwrites call N's audio and only the last slide ends up narrated.
+    // Failure on a single slide is non-fatal — we just skip its voiceover.
+    if (voiceEnabled && voiceName && slideTexts.length > 0) {
+      for (let i = 0; i < slides.length; i++) {
+        const text = (slideTexts[i] || '').trim();
+        if (!text) continue;
+        try {
+          const slideTtsDir = path.join(inputDir, 'tts', `slide-${i}`);
+          const audioPath = await synthesizeTts(text, voiceName, slideTtsDir);
+          slides[i].audioPath = audioPath;
+        } catch (err) {
+          console.warn(`[tts] slide ${i} synthesis failed:`, err);
+        }
+      }
+    }
+
+    let watermarkOverlay: WatermarkOverlay | undefined;
+    if (watermarkFile && watermarkPosition) {
+      const wmPath = path.join(inputDir, 'watermark.png');
+      fs.writeFileSync(wmPath, watermarkFile.buffer);
+      watermarkOverlay = { path: wmPath, position: watermarkPosition };
+    }
+
+    let hookOverlay: HookOverlay | undefined;
+    if (hookFile && hookDurationSec && hookDurationSec > 0) {
+      const hookPath = path.join(inputDir, 'hook.png');
+      fs.writeFileSync(hookPath, hookFile.buffer);
+      hookOverlay = { path: hookPath, durationSec: hookDurationSec };
+    }
+
     const probeResult = await probe(inputPath);
-    const sourceDur = probeResult.isImage ? imageDurationSec : probeResult.durationSec;
+    // Apply trim: if trim values are set and valid, use them
+    let sourceDur = probeResult.isImage ? imageDurationSec : probeResult.durationSec;
+    let effectiveTrimStart: number | undefined;
+    debugLog('[EXPORT DEBUG] trimStartSec:', trimStartSec, 'trimEndSec:', trimEndSec, 'probe.durationSec:', probeResult.durationSec);
+    if (!probeResult.isImage && trimStartSec !== undefined && trimEndSec !== undefined) {
+      const ts = Math.max(0, trimStartSec);
+      const te = Math.min(probeResult.durationSec, trimEndSec);
+      if (te > ts + 0.1) {
+        effectiveTrimStart = ts;
+        sourceDur = te - ts;
+      }
+    }
+    debugLog('[EXPORT DEBUG] sourceDur (inputDurationSec):', sourceDur, 'effectiveTrimStart:', effectiveTrimStart);
 
     // Resolve music path
     let resolvedMusic: string | undefined;
@@ -95,6 +198,15 @@ exportRouter.post('/', upload.array('slides'), async (req, res) => {
       outputPath,
       musicPath: resolvedMusic,
       musicVolume: musicVol,
+      trimStartSec: effectiveTrimStart,
+      effect:
+        effectType === 'buffering' && effectDurationSec > 0
+          ? { type: 'buffering', durationSec: effectDurationSec, count: effectCount }
+          : undefined,
+      targetWidth: targetW,
+      targetHeight: targetH,
+      watermark: watermarkOverlay,
+      hook: hookOverlay,
       onProgress: (percent) => {
         const j = jobs.get(exportId);
         if (j) j.progress = percent;
@@ -107,6 +219,7 @@ exportRouter.post('/', upload.array('slides'), async (req, res) => {
           j.progress = 100;
           j.outputUrl = outputUrl;
         }
+        setTimeout(() => jobs.delete(exportId), JOB_TTL_MS);
       })
       .catch((err: Error) => {
         const j = jobs.get(exportId);
@@ -114,6 +227,7 @@ exportRouter.post('/', upload.array('slides'), async (req, res) => {
           j.status = 'error';
           j.error = err.message || String(err);
         }
+        setTimeout(() => jobs.delete(exportId), JOB_TTL_MS);
       });
 
     res.json({ exportId, outputUrl });

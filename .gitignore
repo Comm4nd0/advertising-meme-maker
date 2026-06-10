@@ -9,3 +9,5 @@ brand/
 .DS_Store
 Thumbs.db
 .claude/
+bin/
+*.tsbuildinfo

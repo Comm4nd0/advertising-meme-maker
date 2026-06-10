@@ -3,6 +3,12 @@ import path from 'path';
 import crypto from 'crypto';
 import { paths } from './paths';
 
+export type WatermarkPosition =
+  | 'top-left'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-right';
+
 export interface BrandColors {
   primary: string;
   secondary: string;
@@ -10,6 +16,9 @@ export interface BrandColors {
   headlineColor: string;
   subheadColor: string;
   useGradient: boolean;
+  handle: string;
+  watermarkEnabled: boolean;
+  watermarkPosition: WatermarkPosition;
   activeLogo?: string; // filename in brand/logos/
 }
 
@@ -20,6 +29,9 @@ const defaultColors: BrandColors = {
   headlineColor: '#FFFFFF',
   subheadColor: '#E0E7F0',
   useGradient: true,
+  handle: '',
+  watermarkEnabled: false,
+  watermarkPosition: 'bottom-right',
 };
 
 const colorsPath = (): string => path.join(paths.brand, 'colors.json');

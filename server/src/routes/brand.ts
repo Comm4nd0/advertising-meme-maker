@@ -11,6 +11,7 @@ import {
   type BrandColors,
 } from '../storage/brand';
 import { saveMusic, listMusic, deleteMusic } from '../storage/music';
+import { isSafeName } from '../storage/paths';
 
 export const brandRouter = Router();
 
@@ -76,6 +77,10 @@ brandRouter.put('/logo/active', (req, res) => {
 // DELETE /api/brand/logo/:filename — remove a logo from the library
 brandRouter.delete('/logo/:filename', (req, res) => {
   try {
+    if (!isSafeName(req.params.filename)) {
+      res.status(400).json({ error: 'Invalid filename' });
+      return;
+    }
     deleteLogo(req.params.filename);
     res.json({
       colors: readColors(),
@@ -109,6 +114,10 @@ brandRouter.post('/music', upload.single('music'), (req, res) => {
 // DELETE /api/brand/music/:filename — remove a music file
 brandRouter.delete('/music/:filename', (req, res) => {
   try {
+    if (!isSafeName(req.params.filename)) {
+      res.status(400).json({ error: 'Invalid filename' });
+      return;
+    }
     deleteMusic(req.params.filename);
     res.json({ music: listMusic() });
   } catch (err) {

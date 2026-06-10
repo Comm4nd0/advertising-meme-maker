@@ -18,3 +18,17 @@ export function ensureDirs(): void {
     fs.mkdirSync(p, { recursive: true });
   }
 }
+
+// Reject a user-supplied path segment (filename or job id) that could escape
+// its storage root via traversal. Any route that joins such a segment onto a
+// storage path MUST gate on this first.
+export function isSafeName(name: unknown): name is string {
+  return (
+    typeof name === 'string' &&
+    name.length > 0 &&
+    !name.includes('/') &&
+    !name.includes('\\') &&
+    !name.includes('..') &&
+    !name.includes('\0')
+  );
+}
