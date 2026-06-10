@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { discoverCandidates } from '../discover/reddit';
 import { CATEGORY_LABELS, type MemeCategory } from '../discover/sources';
 import { generateTagline, isTaglineConfigured, scoreCandidates } from '../discover/tagline';
+import { log } from '../util/log';
 
 export const discoverRouter = Router();
 
@@ -25,7 +26,7 @@ discoverRouter.get('/', async (req, res) => {
         });
         candidates.sort((a, b) => (b.brandFit ?? 0) - (a.brandFit ?? 0));
       } catch (err) {
-        console.warn('[discover] brand-fit scoring failed:', err instanceof Error ? err.message : err);
+        log.warn(`discover: brand-fit scoring failed: ${err instanceof Error ? err.message : err}`);
       }
     }
 

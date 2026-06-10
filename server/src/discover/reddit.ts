@@ -1,5 +1,6 @@
 import https from 'https';
 import { REDDIT_SOURCES, type MemeCategory } from './sources';
+import { log } from '../util/log';
 
 // NOTE: keep in sync with MemeCandidate in client/src/lib/api.ts — the client
 // and server are separate packages, so the shape is duplicated by hand.
@@ -136,7 +137,7 @@ async function fetchSubreddit(
   try {
     body = await fetchJson(url);
   } catch (err) {
-    console.warn(`[discover] failed to fetch r/${subreddit}:`, err instanceof Error ? err.message : err);
+    log.warn(`discover: failed to fetch r/${subreddit}: ${err instanceof Error ? err.message : err}`);
     return [];
   }
 

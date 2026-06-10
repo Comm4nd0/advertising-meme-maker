@@ -4,7 +4,9 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import crypto from 'crypto';
 import ffmpegStatic from 'ffmpeg-static';
+import { log } from '../util/log';
 
 const BIN_DIR = path.resolve(__dirname, '../../../bin');
 const isWin = os.platform() === 'win32';
@@ -17,10 +19,13 @@ const MAX_BINARY_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 /** Optional cookies.txt file — drop it here to use manual cookie auth */
 const COOKIES_FILE = path.resolve(__dirname, '../../../brand/cookies.txt');
 
-const DOWNLOAD_URLS: Record<string, string> = {
-  win32: 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe',
-  darwin: 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos',
-  linux: 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp',
+const RELEASE_BASE = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download';
+
+/** Release asset name per platform — also the key in the checksum manifest. */
+const ASSET_NAMES: Record<string, string> = {
+  win32: 'yt-dlp.exe',
+  darwin: 'yt-dlp_macos',
+  linux: 'yt-dlp',
 };
 
 /**
@@ -64,9 +69,9 @@ function getCookieStrategies(): string[] {
             const fd = fs.openSync(cookiesPath, 'r');
             fs.closeSync(fd);
             strategies.push(`chrome:${profile}`);
-            console.log(`[srv] Chrome profile "${profile}" is unlocked`);
+            log.debug(`Chrome profile "${profile}" is unlocked`);
           } catch {
-            console.log(`[srv] Chrome profile "${profile}" is LOCKED (active)`);
+            log.debug(`Chrome profile "${profile}" is LOCKED (active)`);
           }
         }
       } catch { /* ignore */ }
@@ -222,32 +227,94 @@ function downloadFile(url: string, dest: string): Promise<void> {
   });
 }
 
-/** Download the latest yt-dlp binary from GitHub. */
+/** Fetch a small text file (the checksum manifest), following redirects. */
+function downloadText(url: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const get = (u: string) => {
+      const mod = u.startsWith('https') ? https : http;
+      mod.get(u, { headers: { 'User-Agent': 'advertising-meme-maker/1.0' } }, (res) => {
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
+          get(res.headers.location);
+          return;
+        }
+        if (res.statusCode !== 200) {
+          res.resume();
+          reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+          return;
+        }
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => (body += c));
+        res.on('end', () => resolve(body));
+      }).on('error', reject);
+    };
+    get(url);
+  });
+}
+
+/**
+ * Verify a downloaded binary against the release's SHA2-256SUMS manifest.
+ * The binary is executed with the server's privileges, so a corrupted or
+ * tampered download must never reach disk under the executable name.
+ */
+async function verifyChecksum(filePath: string, assetName: string): Promise<void> {
+  const manifest = await downloadText(`${RELEASE_BASE}/SHA2-256SUMS`);
+  let expected: string | null = null;
+  for (const line of manifest.split(/\r?\n/)) {
+    const m = line.trim().match(/^([0-9a-f]{64})\s+\*?(\S+)$/i);
+    if (m && m[2] === assetName) {
+      expected = m[1].toLowerCase();
+      break;
+    }
+  }
+  if (!expected) {
+    throw new Error(`Checksum manifest has no entry for ${assetName}`);
+  }
+  const actual = crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  if (actual !== expected) {
+    throw new Error(
+      `yt-dlp checksum mismatch (expected ${expected.slice(0, 12)}…, got ${actual.slice(0, 12)}…). ` +
+      `A release may have just been published — try again in a minute.`,
+    );
+  }
+}
+
+/** Download the latest yt-dlp binary from GitHub and verify its checksum. */
 async function downloadBinary(): Promise<string> {
   const platform = os.platform();
-  const url = DOWNLOAD_URLS[platform];
-  if (!url) {
+  const assetName = ASSET_NAMES[platform];
+  if (!assetName) {
     throw new Error(
       `yt-dlp auto-download is not supported on ${platform}. ` +
       `Install yt-dlp manually: https://github.com/yt-dlp/yt-dlp#installation`
     );
   }
 
-  console.log(`[srv] Downloading latest yt-dlp for ${platform}...`);
+  log.info(`Downloading latest yt-dlp for ${platform}...`);
   fs.mkdirSync(BIN_DIR, { recursive: true });
 
-  // Remove old binary first
+  // Download to a staging path; only promote to the executable name after the
+  // checksum verifies.
+  const stagingPath = BIN_PATH + '.download';
+  try {
+    await downloadFile(`${RELEASE_BASE}/${assetName}`, stagingPath);
+    await verifyChecksum(stagingPath, assetName);
+  } catch (err) {
+    if (fs.existsSync(stagingPath)) fs.unlinkSync(stagingPath);
+    throw err;
+  }
+
   if (fs.existsSync(BIN_PATH)) {
     fs.unlinkSync(BIN_PATH);
   }
-
-  await downloadFile(url, BIN_PATH);
+  fs.renameSync(stagingPath, BIN_PATH);
 
   if (!isWin) {
     fs.chmodSync(BIN_PATH, 0o755);
   }
 
-  console.log(`[srv] yt-dlp downloaded to ${BIN_PATH}`);
+  log.info(`yt-dlp downloaded and verified at ${BIN_PATH}`);
   return BIN_PATH;
 }
 
@@ -261,17 +328,17 @@ export async function ensureYtDlp(): Promise<string> {
     const stat = fs.statSync(BIN_PATH);
     const ageMs = Date.now() - stat.mtimeMs;
     if (ageMs < MAX_BINARY_AGE_MS) {
-      console.log(`[srv] yt-dlp binary is ${Math.round(ageMs / 3600000)}h old — OK`);
+      log.debug(`yt-dlp binary is ${Math.round(ageMs / 3600000)}h old — OK`);
       return BIN_PATH;
     }
-    console.log(`[srv] yt-dlp binary is ${Math.round(ageMs / 86400000)}d old — updating`);
+    log.info(`yt-dlp binary is ${Math.round(ageMs / 86400000)}d old — updating`);
     return downloadBinary();
   }
 
   // Check system PATH
   const systemBin = findInPath();
   if (systemBin) {
-    console.log(`[srv] Using system yt-dlp at ${systemBin}`);
+    log.info(`Using system yt-dlp at ${systemBin}`);
     return systemBin;
   }
 
@@ -284,7 +351,7 @@ export async function ensureYtDlp(): Promise<string> {
  * an error that might be fixed by a newer extractor version.
  */
 export async function updateYtDlp(): Promise<string> {
-  console.log(`[srv] Force-updating yt-dlp to latest version...`);
+  log.info(`Force-updating yt-dlp to latest version...`);
   return downloadBinary();
 }
 
@@ -413,7 +480,7 @@ function runYtDlp(
   onProgress?: (line: string) => void,
 ): Promise<DownloadResult> {
   return new Promise((resolve, reject) => {
-    console.log(`[srv] Running: ${ytdlpPath} ${args.map(a => a.includes(' ') ? `"${a}"` : a).join(' ')}`);
+    log.debug(`Running: ${ytdlpPath} ${args.map(a => a.includes(' ') ? `"${a}"` : a).join(' ')}`);
 
     const proc = execFile(ytdlpPath, args, {
       timeout: 5 * 60 * 1000,
@@ -421,7 +488,7 @@ function runYtDlp(
     }, (err, _stdout, stderr) => {
       if (err) {
         const raw = stderr || err.message;
-        console.log(`[srv] yt-dlp failed:\n${raw}`);
+        log.warn(`yt-dlp failed:\n${raw}`);
         return reject(new Error(raw));
       }
 
@@ -432,7 +499,7 @@ function runYtDlp(
       const files = fs.readdirSync(outputDir).filter(f => f.startsWith('input.'));
       if (files.length === 0) {
         const raw = stderr || 'No output file produced';
-        console.log(`[srv] yt-dlp produced no output:\n${raw}`);
+        log.warn(`yt-dlp produced no output:\n${raw}`);
         return reject(new Error(raw));
       }
 
@@ -500,7 +567,7 @@ export async function downloadVideo(
 
   // Try each cookie strategy in order
   const strategies = getCookieStrategies();
-  console.log(`[srv] Cookie strategies to try: ${strategies.length > 0 ? strategies.join(', ') : 'none'}`);
+  log.debug(`Cookie strategies to try: ${strategies.length > 0 ? strategies.join(', ') : 'none'}`);
 
   let lastError = '';
 
@@ -508,17 +575,17 @@ export async function downloadVideo(
     cleanPartials(outputDir);
     const label = strategy === 'cookies-file' ? 'cookies.txt' : strategy;
     onProgress?.(`Trying ${label} for authentication...`);
-    console.log(`[srv] Attempting download with cookie strategy: ${strategy}`);
+    log.debug(`Attempting download with cookie strategy: ${strategy}`);
 
     const args = buildArgs(url, outputTemplate, strategy);
 
     try {
       const result = await runYtDlp(ytdlpPath, args, outputDir, onProgress);
-      console.log(`[srv] Success with strategy: ${strategy}`);
+      log.info(`Download succeeded with cookie strategy: ${strategy}`);
       return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.log(`[srv] Strategy "${strategy}" failed: ${msg.split('\n')[0]}`);
+      log.warn(`Cookie strategy "${strategy}" failed: ${msg.split('\n')[0]}`);
       lastError = msg;
 
       // If it's a lock/DPAPI error, skip to next strategy immediately
@@ -547,7 +614,7 @@ export async function downloadVideo(
   if (bestStrategy) {
     cleanPartials(outputDir);
     onProgress?.('All cookie sources failed — updating yt-dlp and retrying...');
-    console.log(`[srv] Updating yt-dlp and retrying with strategy: ${bestStrategy}`);
+    log.info(`Updating yt-dlp and retrying with strategy: ${bestStrategy}`);
 
     try {
       const freshPath = await updateYtDlp();

@@ -12,6 +12,7 @@ import {
 } from '../storage/brand';
 import { saveMusic, listMusic, deleteMusic } from '../storage/music';
 import { isSafeName } from '../storage/paths';
+import { sniffImage, sniffAudio } from '../storage/fileSig';
 
 export const brandRouter = Router();
 
@@ -38,6 +39,10 @@ brandRouter.put('/', upload.single('logo'), (req, res) => {
       writeColors(colors);
     }
     if (req.file) {
+      if (!sniffImage(req.file.buffer)) {
+        res.status(400).json({ error: 'Logo upload is not a recognized image file' });
+        return;
+      }
       const filename = saveLogo(req.file.buffer, req.file.originalname);
       setActiveLogo(filename);
     }
@@ -101,6 +106,10 @@ brandRouter.post('/music', upload.single('music'), (req, res) => {
   try {
     if (!req.file) {
       res.status(400).json({ error: 'No file uploaded' });
+      return;
+    }
+    if (!sniffAudio(req.file.buffer)) {
+      res.status(400).json({ error: 'Music upload is not a recognized audio file' });
       return;
     }
     const filename = saveMusic(req.file.buffer, req.file.originalname);

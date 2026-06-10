@@ -15,6 +15,7 @@ import { musicPath } from '../storage/music';
 import type { WatermarkPosition } from '../storage/brand';
 import { synthesize as synthesizeTts } from '../tts/edge';
 import { debugLog } from '../util/debug';
+import { log } from '../util/log';
 
 export const exportRouter = Router();
 
@@ -146,7 +147,7 @@ exportRouter.post('/', exportUpload, async (req, res) => {
           const audioPath = await synthesizeTts(text, voiceName, slideTtsDir);
           slides[i].audioPath = audioPath;
         } catch (err) {
-          console.warn(`[tts] slide ${i} synthesis failed:`, err);
+          log.warn(`tts: slide ${i} synthesis failed: ${err instanceof Error ? err.message : err}`);
         }
       }
     }

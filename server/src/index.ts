@@ -14,15 +14,15 @@ if (fs.existsSync(_envPath)) {
     if (!process.env[k]) process.env[k] = v;
   }
 }
-console.log('[srv] ANTHROPIC_API_KEY:', process.env.ANTHROPIC_API_KEY ? 'loaded' : 'missing');
-
 import express from 'express';
 import cors from 'cors';
 import os from 'os';
+import rateLimit from 'express-rate-limit';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 import ffprobeStatic from 'ffprobe-static';
 
+import { log } from './util/log';
 import { uploadRouter } from './routes/upload';
 import { brandRouter } from './routes/brand';
 import { exportRouter } from './routes/export';
@@ -32,10 +32,15 @@ import { paths, ensureDirs } from './storage/paths';
 import { cleanupOldUploads } from './storage/cleanup';
 import { migrateOldLogo } from './storage/brand';
 
+// Imports can hoist above the .env loader, so re-apply the level once env
+// is definitely loaded. Don't announce secret presence at normal log levels.
+log.level = process.env.DEBUG ? 'debug' : 'info';
+log.debug(`ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? 'loaded' : 'missing'}`);
+
 if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic as unknown as string);
 } else {
-  console.warn('[srv] ffmpeg-static path not resolved; relying on system ffmpeg');
+  log.warn('ffmpeg-static path not resolved; relying on system ffmpeg');
 }
 ffmpeg.setFfprobePath(ffprobeStatic.path);
 
@@ -47,6 +52,23 @@ cleanupOldUploads();
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// LAN-friendly rate limits: generous for browsing, tighter on the routes that
+// spawn ffmpeg/yt-dlp or write large files to disk.
+app.use(
+  '/api',
+  rateLimit({ windowMs: 15 * 60 * 1000, limit: 600, standardHeaders: true, legacyHeaders: false }),
+);
+app.use(
+  ['/api/upload', '/api/export'],
+  rateLimit({
+    windowMs: 10 * 60 * 1000,
+    limit: 60,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many upload/export requests — wait a few minutes and try again.' },
+  }),
+);
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
@@ -89,11 +111,11 @@ function lanUrls(port: number): string[] {
 }
 
 app.listen(PORT, HOST, () => {
-  console.log(`[srv] listening on ${HOST}:${PORT}`);
+  log.info(`listening on ${HOST}:${PORT}`);
   if (fs.existsSync(paths.clientDist)) {
-    console.log('[srv] serving built client. Open from any device on your Wi-Fi:');
-    for (const url of lanUrls(PORT)) console.log(`        ${url}`);
+    log.info('serving built client. Open from any device on your Wi-Fi:');
+    for (const url of lanUrls(PORT)) log.info(`        ${url}`);
   } else {
-    console.log('[srv] dev mode — use Vite URLs printed above for the UI; this server handles /api');
+    log.info('dev mode — use Vite URLs printed above for the UI; this server handles /api');
   }
 });

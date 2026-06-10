@@ -6,6 +6,7 @@ import crypto from 'crypto';
 import { paths, isSafeName } from '../storage/paths';
 import { probe } from '../ffmpeg/probe';
 import { ensureYtDlp, downloadVideo } from '../downloader/ytdlp';
+import { isAllowedSourceUrl, allowedDomainsSummary } from '../downloader/urlAllowlist';
 
 export const uploadRouter = Router();
 
@@ -66,6 +67,12 @@ uploadRouter.post('/url', async (req, res) => {
   const { url } = req.body as { url?: string };
   if (!url || typeof url !== 'string') {
     res.status(400).json({ error: 'Missing url field' });
+    return;
+  }
+  if (!isAllowedSourceUrl(url)) {
+    res.status(400).json({
+      error: `URL not supported. Paste a link from: ${allowedDomainsSummary()}`,
+    });
     return;
   }
 

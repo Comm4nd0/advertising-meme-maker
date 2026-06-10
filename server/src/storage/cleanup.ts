@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { paths } from './paths';
+import { log } from '../util/log';
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -14,8 +15,10 @@ export function cleanupOldUploads(): void {
       if (now - stat.mtimeMs > ONE_DAY_MS) {
         fs.rmSync(full, { recursive: true, force: true });
       }
-    } catch {
-      // ignore — best-effort cleanup
+    } catch (err) {
+      // Best-effort, but a locked/undeletable upload leaks disk space —
+      // leave a trace so repeat offenders are noticed.
+      log.warn(`upload cleanup failed for ${full}: ${err instanceof Error ? err.message : err}`);
     }
   }
 }
