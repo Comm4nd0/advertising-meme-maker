@@ -144,6 +144,8 @@ export type MemeCategory =
   | 'generic-funny'
   | 'wholesome';
 
+// NOTE: keep in sync with MemeCandidate in server/src/discover/reddit.ts —
+// the client and server are separate packages, so the shape is duplicated.
 export interface MemeCandidate {
   source: string;
   category: MemeCategory;
@@ -153,6 +155,8 @@ export interface MemeCandidate {
   upvotes: number;
   postedAt: string;
   durationSec: number | null;
+  // 1–10 AI score for brand fit; absent when scoring is unavailable.
+  brandFit?: number;
 }
 
 export interface DiscoverResponse {
@@ -168,10 +172,18 @@ export async function discoverMemes(category?: MemeCategory): Promise<DiscoverRe
   return res.json();
 }
 
+export interface Tagline {
+  hooks: string[];
+  headline: string;
+  subhead: string;
+  caption: string;
+  firstComment: string;
+}
+
 export async function generateTagline(
   title: string,
   category: MemeCategory,
-): Promise<{ headline: string; subhead: string }> {
+): Promise<Tagline> {
   const res = await fetch('/api/discover/tagline', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -210,6 +222,8 @@ export interface StartExportArgs {
   effectType?: 'buffering' | '';
   effectDurationSec?: number;
   effectCount?: number;
+  // Format tag appended to the output filename (e.g. "9x16") for batch exports.
+  variant?: string;
 }
 
 export async function startExport(args: StartExportArgs): Promise<ExportStart> {
@@ -219,6 +233,7 @@ export async function startExport(args: StartExportArgs): Promise<ExportStart> {
   fd.append('imageDurationSec', String(args.imageDurationSec));
   fd.append('targetWidth', String(args.targetWidth));
   fd.append('targetHeight', String(args.targetHeight));
+  if (args.variant) fd.append('variant', args.variant);
   if (args.music) fd.append('music', args.music);
   if (args.musicVolume !== undefined) fd.append('musicVolume', String(args.musicVolume));
   if (args.trimStart !== undefined) fd.append('trimStart', String(args.trimStart));

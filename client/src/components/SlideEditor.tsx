@@ -217,6 +217,14 @@ export function SlideEditor({ slides, selectedId, onChange, onSelect, hasSource 
                     }
                   />
                 </label>
+                <label className="row inline">
+                  <input
+                    type="checkbox"
+                    checked={!!s.showCta}
+                    onChange={(e) => update(s.id, { showCta: e.target.checked })}
+                  />
+                  <span>Show call to action (set under Brand)</span>
+                </label>
               </div>
             )}
           </div>

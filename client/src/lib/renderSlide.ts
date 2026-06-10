@@ -1,5 +1,6 @@
 import type { Slide, BrandKit } from '../types';
 import { wrapText } from './wrapText';
+import { roundRect } from './canvasUtil';
 
 export interface RenderArgs {
   canvas: HTMLCanvasElement;
@@ -8,13 +9,16 @@ export interface RenderArgs {
   logoImg: HTMLImageElement | null;
   width: number;
   height: number;
+  // Pre-rendered QR code (see lib/qr.ts) — drawn when the slide shows a CTA
+  // and the brand has a CTA URL.
+  qrCanvas?: HTMLCanvasElement | null;
 }
 
 const FONT_STACK =
   "'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
 
 export function renderSlide(args: RenderArgs): void {
-  const { canvas, slide, brand, logoImg, width, height } = args;
+  const { canvas, slide, brand, logoImg, width, height, qrCanvas } = args;
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
@@ -60,6 +64,12 @@ export function renderSlide(args: RenderArgs): void {
 
   const measure = (s: string) => ctx.measureText(s).width;
 
+  // CTA block (button pill, offer code, QR) stacks bottom-up from the lower
+  // edge; the headline/subhead region is centered in whatever space remains.
+  const ctaBottomReserve = slide.showCta
+    ? renderCtaBlock(ctx, brand, qrCanvas ?? null, width, height, padding)
+    : 0;
+
   ctx.font = `700 ${headlineSize}px ${FONT_STACK}`;
   const headlineLines = wrapText(measure, slide.headline || '', maxTextWidth);
 
@@ -75,7 +85,7 @@ export function renderSlide(args: RenderArgs): void {
   const totalH = headlineBlockH + (subheadBlockH > 0 ? gap + subheadBlockH : 0);
 
   const regionTop = logoBottom + padding;
-  const regionBottom = height - padding;
+  const regionBottom = height - padding - ctaBottomReserve;
   let y = regionTop + Math.max(0, (regionBottom - regionTop - totalH) / 2);
 
   ctx.font = `700 ${headlineSize}px ${FONT_STACK}`;
@@ -94,6 +104,84 @@ export function renderSlide(args: RenderArgs): void {
       y += subheadLineH;
     }
   }
+}
+
+/**
+ * Draw the CTA stack (button pill above offer code above QR) anchored to the
+ * bottom edge. Returns the vertical space consumed, measured up from
+ * `height - padding`, so the caller can shrink the text region.
+ */
+function renderCtaBlock(
+  ctx: CanvasRenderingContext2D,
+  brand: BrandKit,
+  qrCanvas: HTMLCanvasElement | null,
+  width: number,
+  height: number,
+  padding: number,
+): number {
+  const ctaText = brand.ctaText.trim();
+  const offerCode = brand.offerCode.trim();
+  const hasQr = !!qrCanvas && brand.ctaUrl.trim().length > 0;
+  if (!ctaText && !offerCode && !hasQr) return 0;
+
+  const gap = Math.round(height * 0.022);
+  let bottom = height - padding;
+
+  if (hasQr) {
+    const qrSize = Math.round(height * 0.16);
+    const qx = Math.round((width - qrSize) / 2);
+    const qy = bottom - qrSize;
+    // White card behind the QR so it scans on any brand color.
+    ctx.fillStyle = '#FFFFFF';
+    roundRect(ctx, qx - 2, qy - 2, qrSize + 4, qrSize + 4, Math.round(qrSize * 0.06));
+    ctx.fill();
+    ctx.drawImage(qrCanvas!, qx, qy, qrSize, qrSize);
+    bottom = qy - gap;
+  }
+
+  if (offerCode) {
+    const codeSize = Math.round(height * 0.03);
+    ctx.font = `700 ${codeSize}px ${FONT_STACK}`;
+    const textW = Math.ceil(ctx.measureText(offerCode).width);
+    const boxH = Math.round(codeSize * 2);
+    const boxW = Math.min(width - padding * 2, textW + codeSize * 2);
+    const bx = Math.round((width - boxW) / 2);
+    const by = bottom - boxH;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+    ctx.lineWidth = Math.max(2, Math.round(codeSize * 0.1));
+    ctx.setLineDash([codeSize * 0.5, codeSize * 0.35]);
+    roundRect(ctx, bx, by, boxW, boxH, Math.round(boxH * 0.25));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(offerCode, width / 2, by + boxH / 2);
+    bottom = by - gap;
+  }
+
+  if (ctaText) {
+    const ctaSize = Math.round(height * 0.034);
+    ctx.font = `700 ${ctaSize}px ${FONT_STACK}`;
+    const textW = Math.ceil(ctx.measureText(ctaText).width);
+    const pillH = Math.round(ctaSize * 2.4);
+    const pillW = Math.min(width - padding * 2, textW + Math.round(ctaSize * 2.4));
+    const px = Math.round((width - pillW) / 2);
+    const py = bottom - pillH;
+    // White button with primary-color text reads as clickable on any gradient.
+    ctx.fillStyle = '#FFFFFF';
+    roundRect(ctx, px, py, pillW, pillH, pillH / 2);
+    ctx.fill();
+    ctx.fillStyle = brand.primary;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ctaText, width / 2, py + pillH / 2);
+    bottom = py - gap;
+  }
+
+  // Restore baseline used by the headline/subhead pass.
+  ctx.textBaseline = 'top';
+  return height - padding - bottom;
 }
 
 export function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {

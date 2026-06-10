@@ -1133,3 +1133,52 @@ select {
 }
 
 }
+
+/* ── AI brand-fit badge on discover cards ── */
+.discover-fit {
+  color: #ffd166;
+  font-weight: 600;
+}
+
+/* ── AI hook variant picker ── */
+.hook-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+.hook-variants button.pill {
+  font-size: 0.75em;
+  padding: 5px 10px;
+  text-align: left;
+}
+
+/* ── Suggested caption / first comment after export ── */
+.social-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 10px;
+  background: #161c27;
+  border: 1px solid #232b38;
+  border-radius: 8px;
+}
+.social-copy-block p {
+  margin: 4px 0 0;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+}
+.social-copy-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8em;
+  font-weight: 600;
+  color: #a8b3ff;
+}
+.social-copy-head button {
+  font-size: 0.85em;
+  padding: 3px 10px;
+}

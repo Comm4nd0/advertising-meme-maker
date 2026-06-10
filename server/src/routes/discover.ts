@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { discoverCandidates } from '../discover/reddit';
 import { CATEGORY_LABELS, type MemeCategory } from '../discover/sources';
-import { generateTagline, isTaglineConfigured } from '../discover/tagline';
+import { generateTagline, isTaglineConfigured, scoreCandidates } from '../discover/tagline';
 
 export const discoverRouter = Router();
 
@@ -12,6 +12,23 @@ discoverRouter.get('/', async (req, res) => {
     const cat = (req.query.category as string) || '';
     const filter = cat && VALID_CATEGORIES.has(cat) ? (cat as MemeCategory) : null;
     const candidates = await discoverCandidates(filter, 12);
+
+    // Brand-fit scoring is decoration: surface the most convertible memes
+    // first, but never let a model failure break discovery.
+    if (isTaglineConfigured() && candidates.length > 0) {
+      try {
+        const scores = await scoreCandidates(
+          candidates.map((c) => ({ title: c.title, category: c.category })),
+        );
+        candidates.forEach((c, i) => {
+          if (scores[i] > 0) c.brandFit = scores[i];
+        });
+        candidates.sort((a, b) => (b.brandFit ?? 0) - (a.brandFit ?? 0));
+      } catch (err) {
+        console.warn('[discover] brand-fit scoring failed:', err instanceof Error ? err.message : err);
+      }
+    }
+
     res.json({
       candidates,
       taglineConfigured: isTaglineConfigured(),

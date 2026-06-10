@@ -188,6 +188,40 @@ export function BrandSettings({ onChange }: Props) {
       </div>
 
       <hr />
+      <h3>Call to action</h3>
+      <p className="muted" style={{ fontSize: '0.8em', margin: '2px 0 6px' }}>
+        Shown on outro slides with "Show call to action" ticked. The URL becomes a
+        scannable QR code with tracking tags so you can see which memes convert.
+      </p>
+      <label>
+        <span>Button text</span>
+        <input
+          type="text"
+          placeholder="Get a free quote"
+          value={brand.ctaText}
+          onChange={(e) => update('ctaText', e.target.value)}
+        />
+      </label>
+      <label>
+        <span>Link / QR URL</span>
+        <input
+          type="text"
+          placeholder="https://lumatechsolutions.co.uk/quote"
+          value={brand.ctaUrl}
+          onChange={(e) => update('ctaUrl', e.target.value)}
+        />
+      </label>
+      <label>
+        <span>Offer code</span>
+        <input
+          type="text"
+          placeholder="MEME10"
+          value={brand.offerCode}
+          onChange={(e) => update('offerCode', e.target.value)}
+        />
+      </label>
+
+      <hr />
       <h3>Watermark</h3>
       <label>
         <span>Social handle</span>

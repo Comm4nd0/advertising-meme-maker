@@ -186,13 +186,15 @@ export function pickTemplateSet(cat: Category, excludeIndex?: number): { index: 
   return { index: idx, set: sets[idx] };
 }
 
-/** Convert a TemplateSet into Slide[] with unique IDs */
+/** Convert a TemplateSet into Slide[] with unique IDs. The final slide carries
+ * the brand call-to-action so every suggested outro ends with a next step. */
 export function templateSetToSlides(set: TemplateSet): Slide[] {
-  return set.slides.map((t) => ({
+  return set.slides.map((t, i) => ({
     id: uid(),
     headline: t.headline,
     subhead: t.subhead,
     durationSec: t.durationSec,
+    showCta: i === set.slides.length - 1,
   }));
 }
 

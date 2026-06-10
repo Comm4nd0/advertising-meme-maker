@@ -14,13 +14,14 @@ import { DiscoverPanel } from './components/DiscoverPanel';
 import { DEFAULT_VOICE } from './lib/ttsVoices';
 import { pickTemplateSet, templateSetToSlides, type Category } from './lib/slideTemplates';
 import { ALL_ASPECTS } from './lib/aspectRatio';
-import type { MemeCandidate, MemeCategory } from './lib/api';
+import type { MemeCandidate, MemeCategory, Tagline } from './lib/api';
 import type {
   AspectRatio,
   BrandKit,
   HookSettings,
   ProbeResult,
   Slide,
+  SocialCopy,
 } from './types';
 
 type MobileTab = 'source' | 'preview' | 'slides' | 'export';
@@ -82,6 +83,10 @@ export function App() {
       durationSec: typeof r?.durationSec === 'number' ? r.durationSec : 2,
     };
   });
+  // AI-suggested hook options + post copy from the last Discover pick. Ephemeral
+  // by design — they belong to the currently loaded meme.
+  const [hookVariants, setHookVariants] = useState<string[]>([]);
+  const [social, setSocial] = useState<SocialCopy | null>(null);
   const [voiceEnabled, setVoiceEnabled] = useState<boolean>(
     () => localStorage.getItem('amm.voiceEnabled') === '1'
   );
@@ -177,6 +182,8 @@ export function App() {
     }
     setTrimStart(0);
     setTrimEnd(p.durationSec);
+    setHookVariants([]);
+    setSocial(null);
 
     // Auto-suggest slides on first upload (only if none exist yet)
     if (slides.length === 0) {
@@ -212,7 +219,7 @@ export function App() {
   function onDiscoverLoad(
     p: ProbeResult,
     candidate: MemeCandidate,
-    tagline: { headline: string; subhead: string } | null,
+    tagline: Tagline | null,
   ) {
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
     setProbe(p);
@@ -229,6 +236,18 @@ export function App() {
     }
     setSlides(suggested);
     if (suggested.length > 0) setSelectedSlideId(suggested[0].id);
+
+    // Surface the AI hook variants (first one pre-applied) and post copy.
+    const hooks = tagline?.hooks ?? [];
+    setHookVariants(hooks);
+    if (hooks.length > 0) {
+      setHook((h) => ({ ...h, text: hooks[0] }));
+    }
+    setSocial(
+      tagline && (tagline.caption || tagline.firstComment)
+        ? { caption: tagline.caption, firstComment: tagline.firstComment }
+        : null,
+    );
 
     setMobileTab('preview');
   }
@@ -262,7 +281,7 @@ export function App() {
             )}
           </p>
         )}
-        <HookEditor hook={hook} onChange={setHook} hasSource={!!probe} />
+        <HookEditor hook={hook} onChange={setHook} hasSource={!!probe} variants={hookVariants} />
         <hr />
         <EffectsEditor effect={effect} onChange={setEffect} hasSource={!!probe} />
         <hr />
@@ -359,6 +378,7 @@ export function App() {
             voiceEnabled={voiceEnabled}
             voiceName={voiceName}
             effect={effect}
+            social={social}
           />
           <hr />
           <h2>Previous exports</h2>

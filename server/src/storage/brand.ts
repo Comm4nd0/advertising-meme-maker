@@ -19,6 +19,10 @@ export interface BrandColors {
   handle: string;
   watermarkEnabled: boolean;
   watermarkPosition: WatermarkPosition;
+  // Call-to-action defaults rendered on outro slides that opt in.
+  ctaText: string;
+  ctaUrl: string;
+  offerCode: string;
   activeLogo?: string; // filename in brand/logos/
 }
 
@@ -32,6 +36,9 @@ const defaultColors: BrandColors = {
   handle: '',
   watermarkEnabled: false,
   watermarkPosition: 'bottom-right',
+  ctaText: '',
+  ctaUrl: '',
+  offerCode: '',
 };
 
 const colorsPath = (): string => path.join(paths.brand, 'colors.json');

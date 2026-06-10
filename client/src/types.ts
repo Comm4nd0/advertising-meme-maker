@@ -28,6 +28,10 @@ export interface BrandKit {
   handle: string;
   watermarkEnabled: boolean;
   watermarkPosition: WatermarkPosition;
+  // Call-to-action defaults rendered on slides that opt in via Slide.showCta.
+  ctaText: string;
+  ctaUrl: string;
+  offerCode: string;
 }
 
 export interface Slide {
@@ -35,11 +39,19 @@ export interface Slide {
   headline: string;
   subhead: string;
   durationSec: number;
+  // Render the brand CTA block (button text, offer code, QR) on this slide.
+  showCta?: boolean;
 }
 
 export interface HookSettings {
   text: string;
   durationSec: number;
+}
+
+// AI-suggested post text to paste alongside the exported video.
+export interface SocialCopy {
+  caption: string;
+  firstComment: string;
 }
 
 export interface BrandResponse {

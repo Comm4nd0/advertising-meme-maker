@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { renderSlide } from '../lib/renderSlide';
+import { qrCanvasFor } from '../lib/qr';
 import type { BrandKit, ProbeResult, Slide } from '../types';
 
 interface Props {
@@ -45,14 +46,28 @@ export const SlidePreview = forwardRef<SlidePreviewHandle, Props>(function Slide
   useEffect(() => {
     if (mode !== 'slide') return;
     if (!canvasRef.current || !brand || !slide || !probe) return;
-    renderSlide({
-      canvas: canvasRef.current,
-      slide,
-      brand,
-      logoImg,
-      width: probe.width,
-      height: probe.height,
-    });
+    let cancelled = false;
+    (async () => {
+      // The QR rasterizes asynchronously; preview uses the raw CTA URL
+      // (export appends per-format UTM tags).
+      let qr: HTMLCanvasElement | null = null;
+      if (slide.showCta && brand.ctaUrl.trim()) {
+        qr = await qrCanvasFor(brand.ctaUrl.trim()).catch(() => null);
+      }
+      if (cancelled || !canvasRef.current) return;
+      renderSlide({
+        canvas: canvasRef.current,
+        slide,
+        brand,
+        logoImg,
+        width: probe.width,
+        height: probe.height,
+        qrCanvas: qr,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [mode, slide, brand, logoImg, probe]);
 
   // Keep trim values in refs so the timeupdate listener always sees the latest

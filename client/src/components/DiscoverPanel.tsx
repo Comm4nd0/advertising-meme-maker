@@ -5,12 +5,13 @@ import {
   uploadFromUrl,
   type MemeCandidate,
   type MemeCategory,
+  type Tagline,
   type UrlDownloadUpdate,
 } from '../lib/api';
 import type { ProbeResult } from '../types';
 
 interface Props {
-  onLoad: (probe: ProbeResult, candidate: MemeCandidate, tagline: { headline: string; subhead: string } | null) => void;
+  onLoad: (probe: ProbeResult, candidate: MemeCandidate, tagline: Tagline | null) => void;
 }
 
 export function DiscoverPanel({ onLoad }: Props) {
@@ -139,6 +140,14 @@ export function DiscoverPanel({ onLoad }: Props) {
               <div className="discover-meta">
                 <div className="discover-title" title={c.title}>{c.title}</div>
                 <div className="discover-sub">
+                  {c.brandFit !== undefined && (
+                    <span
+                      className="discover-fit"
+                      title="AI brand-fit score: how naturally this meme angles toward Luma Tech security messaging"
+                    >
+                      🎯 {c.brandFit}/10
+                    </span>
+                  )}
                   <span className="discover-cat">{categories[c.category] || c.category}</span>
                   <span className="discover-ups">↑ {c.upvotes.toLocaleString()}</span>
                   {c.durationSec !== null && (

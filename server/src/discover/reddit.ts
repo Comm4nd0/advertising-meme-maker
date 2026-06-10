@@ -1,6 +1,8 @@
 import https from 'https';
 import { REDDIT_SOURCES, type MemeCategory } from './sources';
 
+// NOTE: keep in sync with MemeCandidate in client/src/lib/api.ts — the client
+// and server are separate packages, so the shape is duplicated by hand.
 export interface MemeCandidate {
   source: string;
   category: MemeCategory;
@@ -10,6 +12,9 @@ export interface MemeCandidate {
   upvotes: number;
   postedAt: string;
   durationSec: number | null;
+  // 1–10 AI score for how naturally the meme fits a Luma Tech security angle.
+  // Absent when scoring is unavailable (no API key / model error).
+  brandFit?: number;
 }
 
 interface RedditChild {

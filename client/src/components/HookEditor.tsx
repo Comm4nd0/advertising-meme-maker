@@ -4,9 +4,11 @@ interface Props {
   hook: HookSettings;
   onChange: (hook: HookSettings) => void;
   hasSource: boolean;
+  // AI-suggested hook options from Discover — shown as one-tap choices.
+  variants: string[];
 }
 
-export function HookEditor({ hook, onChange, hasSource }: Props) {
+export function HookEditor({ hook, onChange, hasSource, variants }: Props) {
   return (
     <div className="hook-editor">
       <label>
@@ -19,6 +21,21 @@ export function HookEditor({ hook, onChange, hasSource }: Props) {
           disabled={!hasSource}
         />
       </label>
+      {variants.length > 0 && (
+        <div className="hook-variants">
+          {variants.map((v) => (
+            <button
+              key={v}
+              className={hook.text === v ? 'pill active' : 'pill'}
+              onClick={() => onChange({ ...hook, text: v })}
+              disabled={!hasSource}
+              title="AI-suggested hook — tap to use"
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+      )}
       {hook.text.trim() && (
         <label>
           <span>Hook duration: {hook.durationSec}s</span>

@@ -90,6 +90,10 @@ exportRouter.post('/', exportUpload, async (req, res) => {
     const slideTexts: string[] = req.body.slideTexts
       ? JSON.parse(req.body.slideTexts)
       : [];
+    // Optional format tag appended to the output filename (e.g. "9x16") so
+    // multi-format batch exports are distinguishable in the output folder.
+    const variantRaw = (req.body.variant as string) || '';
+    const variant = variantRaw.toLowerCase().replace(/[^a-z0-9x-]/g, '').slice(0, 12);
     const effectType = (req.body.effectType as string) || '';
     const effectDurationSec = num(req.body.effectDurationSec, 0, 0, 60);
     const effectCount = Math.round(num(req.body.effectCount, 1, 1, 10));
@@ -184,7 +188,7 @@ exportRouter.post('/', exportUpload, async (req, res) => {
     }
 
     const exportId = crypto.randomUUID();
-    const outputName = `${Date.now()}-${jobId.slice(0, 8)}.mp4`;
+    const outputName = `${Date.now()}-${jobId.slice(0, 8)}${variant ? `-${variant}` : ''}.mp4`;
     const outputPath = path.join(paths.output, outputName);
     const outputUrl = `/output/${outputName}`;
 
